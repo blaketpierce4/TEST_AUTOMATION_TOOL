@@ -1,86 +1,92 @@
-# tool.py
 import configparser
 import requests
 import logging
-import time
 import subprocess
 import os
-from base64 import b64decode
+import shutil
+import base64
 
 # Setup logging
 logging.basicConfig(filename='tool.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s: %(message)s')
 
-# Load API keys
+# Load API keys from config.ini
 config = configparser.ConfigParser()
 config.read('config.ini')
-GITHUB_API_KEY = config['DEFAULT']['GitHubApiKey']
-OPENAI_API_KEY = config['DEFAULT']['OpenAIApiKey']
+GITHUB_API_KEY = config.get('DEFAULT', 'GitHubApiKey', fallback='INSERT_YOUR_GITHUB_API_KEY_HERE')
+OPENAI_API_KEY = config.get('DEFAULT', 'OpenAIApiKey', fallback='INSERT_YOUR_OPENAI_API_KEY_HERE')
+
+def clone_repository(repo_url, local_dir):
+    """Clones the specified GitHub repository into a local directory."""
+    if os.path.exists(local_dir):
+        shutil.rmtree(local_dir)
+    os.makedirs(local_dir, exist_ok=True)
+    clone_command = ["git", "clone", repo_url, local_dir]
+    subprocess.run(clone_command, check=True)
+    logging.info(f"Repository cloned into {local_dir}")
 
 def fetch_github_content(repo_url):
-    """Fetch content from the specified GitHub repository."""
-    start_time = time.time()
-    owner_repo = repo_url.split("github.com/")[1]
-    api_url = f"https://api.github.com/repos/{owner_repo}/contents/"
+    """Fetch README content from the specified GitHub repository."""
+    owner_repo = "/".join(repo_url.split("github.com/")[1].split('/')[:2])
+    api_url = f"https://api.github.com/repos/{owner_repo}/contents/README.md"
     
     headers = {"Authorization": f"token {GITHUB_API_KEY}"}
     response = requests.get(api_url, headers=headers)
     
     if response.status_code == 200:
-        duration = time.time() - start_time
-        logging.info(f"GitHub content fetched in {duration:.2f} seconds")
-        return response.json()
+        content = base64.b64decode(response.json()['content']).decode('utf-8')
+        return content
     else:
         logging.error("Failed to fetch GitHub content")
         return None
 
 def analyze_with_openai(prompt):
-    """Analyze code or generate test cases using OpenAI."""
-    start_time = time.time()
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
     data = {
         "prompt": prompt,
-        "max_tokens": 100,
+        "max_tokens": 1000,
         "temperature": 0.5,
-        "model": "code-davinci-002"  # Change as needed
+        "model": "gpt-4-0125-preview"  # Updated model name
     }
     response = requests.post("https://api.openai.com/v1/completions", json=data, headers=headers)
     
     if response.status_code == 200:
-        duration = time.time() - start_time
         result = response.json()["choices"][0]["text"]
-        logging.info(f"OpenAI analysis completed in {duration:.2f} seconds")
+        logging.info(f"OpenAI analysis result: {result}")
         return result
     else:
-        logging.error("Failed to analyze with OpenAI")
+        error_message = response.text
+        logging.error(f"Failed to analyze with OpenAI: {error_message}")
         return None
 
-def execute_tests(test_file):
-    """Execute tests in the specified test file."""
-    if not os.path.exists(test_file):
-        logging.error("Test file does not exist")
-        return
-    start_time = time.time()
-    result = subprocess.run(["pytest", test_file], capture_output=True, text=True)
-    duration = time.time() - start_time
-    logging.info(f"Tests executed in {duration:.2f} seconds")
-    logging.info(f"Test results: {result.stdout}")
+def execute_tests(repo_dir):
+    """Execute tests within the cloned repository directory without changing global working directory."""
+    test_log_file = os.path.join(repo_dir, "test_log.txt")
+    test_error_file = os.path.join(repo_dir, "test_error.txt")
+    
+    with open(test_log_file, 'w') as stdout_file, open(test_error_file, 'w') as stderr_file:
+        result = subprocess.run(["pytest"], cwd=repo_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout_file.write(result.stdout)
+        stderr_file.write(result.stderr)
+    
+    logging.info(f"Tests executed. Results saved to {test_log_file} and errors to {test_error_file}")
 
 def main(repo_url):
-    # Example prompt for generating test cases based on fetched README content
-    content = fetch_github_content(repo_url)
-    if content:
-        for file in content:
-            if file['name'] == "README.md":
-                readme_content = b64decode(file['content']).decode('utf-8')
-                prompt = f"Write Python test cases for the following project description:\n{readme_content}"
-                test_cases = analyze_with_openai(prompt)
-                if test_cases:
-                    # Assuming test_cases contains valid Python code
-                    with open('generated_tests.py', 'w') as f:
-                        f.write(test_cases)
-                    execute_tests('generated_tests.py')
-                break
+    repo_name = repo_url.split('/')[-1]
+    local_dir = f"./cloned_repos/{repo_name}"
+    clone_repository(repo_url, local_dir)
+    
+    readme_content = fetch_github_content(repo_url)
+    if readme_content:
+        prompt = f"Write Python test cases for the following project description:\n{readme_content}"
+        test_cases = analyze_with_openai(prompt)
+        if test_cases:
+            test_file_path = os.path.join(local_dir, 'generated_tests.py')
+            with open(test_file_path, 'w') as test_file:
+                test_file.write(test_cases)
+            execute_tests(local_dir)
+    else:
+        logging.error("No README.md content to analyze or failed to generate test cases.")
 
 if __name__ == "__main__":
     repo_url = input("Enter the GitHub repository URL: ")

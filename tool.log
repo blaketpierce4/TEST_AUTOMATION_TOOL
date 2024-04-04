@@ -1,0 +1,20 @@
+2024-04-04 16:36:24,869 - INFO: Repository cloned into ./cloned_repos/onefetch
+2024-04-04 16:36:25,461 - ERROR: Failed to analyze with OpenAI: {
+    "error": {
+        "message": "The model `text-davinci-004` does not exist or you do not have access to it.",
+        "type": "invalid_request_error",
+        "param": null,
+        "code": "model_not_found"
+    }
+}
+
+2024-04-04 16:37:50,179 - INFO: Repository cloned into ./cloned_repos/onefetch
+2024-04-04 16:37:50,761 - ERROR: Failed to analyze with OpenAI: {
+  "error": {
+    "message": "This is a chat model and not supported in the v1/completions endpoint. Did you mean to use v1/chat/completions?",
+    "type": "invalid_request_error",
+    "param": "model",
+    "code": null
+  }
+}
+
