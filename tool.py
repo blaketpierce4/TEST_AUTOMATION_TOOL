@@ -1,5 +1,6 @@
 import configparser
 import requests
+import google.generativeai as genai
 import logging
 import subprocess
 import os
@@ -15,6 +16,7 @@ config = configparser.ConfigParser()
 config.read('config.ini')
 GITHUB_API_KEY = config.get('DEFAULT', 'GitHubApiKey', fallback='INSERT_YOUR_GITHUB_API_KEY_HERE')
 OPENAI_API_KEY = config.get('DEFAULT', 'OpenAIApiKey', fallback='INSERT_YOUR_OPENAI_API_KEY_HERE')
+GEMINI_API_KEY = config.get('DEFAULT', 'GeminiApiKey', fallback='INSERT_YOUR_GEMINI_API_KEY_HERE')
 
 def clone_repository(repo_url, local_dir):
     """Clones the specified GitHub repository into a local directory."""
@@ -58,6 +60,22 @@ def analyze_with_openai(prompt):
         error_message = response.text
         logging.error(f"Failed to analyze with OpenAI: {error_message}")
         return None
+
+def analyze_with_google_gemini(prompt):
+    """Analyze code or generate test cases using Google Gemini.""" 
+    genai.configure(api_key=GEMINI_API_KEY)   
+    try:
+        model = genai.GenerativeModel('gemini-pro')  # Adjust the model name as necessary
+        response = model.generate_content(prompt)
+        
+        if response:
+            result = response.text
+            logging.info(f"Google Gemini analysis result: {result}")
+            return result
+    except Exception as e:
+        logging.error(f"Failed to analyze with Google Gemini: {e}")
+
+    return None
 
 def execute_tests(repo_dir):
     """Execute tests within the cloned repository directory without changing global working directory."""
